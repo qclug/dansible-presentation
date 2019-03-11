@@ -1,0 +1,341 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>QCLUG - Docker + Ansible Presentation</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/black.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section>
+					<h1>Docker + Ansible</h1>
+					<h4>Deploying HA Redis on docker with Ansible</h4>
+					<img src="img/docker-logo.png" align="left"><img src="img/redis-logo.png" height="150" style="position: absolute; top: 55%; left: 0; right: 0; margin: auto;"><img src="img/ansible-logo.png" align="right">
+				</section>
+				<section>
+					<h4>Purpose of each tool</h4>
+					<ul>
+					<li><h5>Redis+Sentinel</h5>
+						<ul>
+						<li>HA in-memory key/value (mostly single-threaded) database
+						</ul>
+					<li><h5>Docker</h5>
+						<ul>
+						<li>Containers enable bin packing for Redis and thus gives you more optimal resource utilization
+						</ul>
+					<li><h5>Ansible</h5>
+						<ul>
+						<li>Cluster deployment, orchestration and configuration management
+						</ul>
+					</ul>
+				</section>
+				<section>
+					<h4>What is Redis?</h4>
+					<font size="6">
+					<ul>
+					<li>Redis (REmote DIctionary Server) is an in-memory, key-value database, commonly referred to as a data structure server.
+					<li>Originally written by Salvatore Sanfilippo who needed something faster than MySQL
+					<li>Was sponsored by Pivotal until 2015 and now is owned and developed by Redis Labs
+					<li>Common use cases
+						<ul>
+						<li>Session Cache
+						<li>Full Page Cache (FPC)
+						<li>Queues
+						<li>Leaderboards/Counting
+						<li>Pub/Sub
+						</ul>
+					</ul>
+					</font>
+				</section>
+				<section>
+					<h4>What is Sentinel?</h4>
+					<ul>
+					<li>Provides Monitoring, Notification, Automatic Failover, Service Discovery/Configuration Provider
+					<li>Apps talk directly to Sentinel, typically with a connect string of comma seperated uris:
+					<pre><code>redis://116.203.124.77:26379,redis://116.203.124.67:26379,redis://116.203.124.97:26379</code></pre>
+					<li>Automatically reconfigures Redis nodes using CONFIG REWRITE when a failure occurs...
+					</ul>
+				</section>
+				<section>
+					<h4>But... This is a presentation about orchestrating Docker with Ansible</h4>
+					<p>
+					<div class="fragment">
+					<h4>not Redis...</h4>
+					</div>
+				</section>
+				<section>
+					<h5>Ansible Components</h5>
+					<font size="6">
+					<ul>
+					<li>Latest release of Ansible
+					<li>modules
+						<ul>
+						<li>docker_container module (included in Ansible)
+						</ul>
+					<li>roles
+						<ul>
+						<li>ansible-role-docker (installs Docker CE - third party role)
+						<li>configure_container (configures redis and sentinel containers)
+						<li>create_container (pulls docker images and wraps the docker_container module)
+						</ul>
+					<li>playbooks
+						<ul>
+						<li>playbook_deploy_redis_containers.yml
+						<li>playbook_redis_check.yml
+						</ul>
+					<li>variables
+						<ul>
+						<li>stored in group_vars
+						</ul>
+					</font>
+					</ul>
+
+				</section>
+				<section>
+					<h4>Container definitions</h4>
+					<pre style="display: inline;">group_vars</pre>
+					<font size="6"><pre><code>---
+- container_name: app1_redis
+  password: supersecrepassword
+  container_exposed_ports:
+    - 6379
+  container_published_ports:
+    - 6379:6379
+  container_volumes:
+    - /docker/app1_redis:/usr/local/etc/redis
+  container_networks:
+    - name: br-redis
+- container_name: app2_redis
+  password: supersecretpassword
+  container_exposed_ports:
+    - 6379
+  container_published_ports:
+    - 6380:6379
+  container_volumes:
+    - /docker/app2_redis:/usr/local/etc/redis
+  container_networks:
+    - name: br-redis</code></pre></font>
+
+				</section>
+				<section>
+					<h4>docker_container module</h4>
+					<font size="6">
+					<em>Note: docker_container uses either the docker-py or docker Python modules, however docker-py is deprecated</em>
+					<pre><code>---
+docker_container:
+  name: "app2_redis"
+  image: "docker.io/library/redis:5.0.3"
+  state: "started"
+  recreate: "no"
+  command: "redis-server *:6379"
+  exposed_ports:
+    - 6379
+  published_ports:
+    - 6380:6379
+  volumes:
+    - /docker/app2_redis:/usr/local/etc/redis
+  sysctls:
+    net.core.somaxconn: 65535
+  networks:
+    - name: br-redis
+  restart_policy: "unless-stopped"
+  interactive: yes
+  tty: yes
+					</code></pre></font>
+				</section>
+				<section>
+					<h4>Benefits of doing this crazy Ansible thing vs. (<em>insert your favorite container scheduler here</em>)...</h4>
+					<ul>
+
+					<li>Down right simplicity
+					<li>Predictable
+					<li>Data persistence/safety of your data
+					<li>Scalable
+					<li>Repeatable
+					</ul>
+				</section>
+				<section>
+					<a href="https://www.youtube.com/watch?v=2PjVuTzA2lk">
+					<div text-align="center"><font size="3"><pre>
+						             ``.---:::///+++++++oooooossssssssssssssssssssssoooooo+++++++////:::---..``             
+						        ./+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyso/-`       
+						     ./syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+.     
+						   `+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+`   
+						  .syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo`  
+						  oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+  
+						 -yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy` 
+						 +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/ 
+						 syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo 
+						.yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyysyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyys`
+						-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:`:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.
+						:yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-
+						+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:      `-/syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:
+						+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:         `./oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:            `.:osyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                `:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                      ./yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                `:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+						oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:            `.:osyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+						+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:         `./oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+						+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:      `-/syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/
+						:yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-
+						-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:`:osyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.
+						.yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyysyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy`
+						 syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo 
+						 +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/ 
+						 -yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy. 
+						  oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+  
+						  `syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo`  
+						   `+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/`   
+						     `/syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyys/`     
+						        .:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyys+:.        
+						             ``.---:::///+++++++oooooossssssssssssssssssssssssooooo++++++++///:::---.``             
+					</pre></font></div></a>
+				</section>
+				<section>
+					<h4>Ease of day two operations</h4>
+					<font size="6">
+					<ul>
+					<li>Additional container provisioning
+						<ul>
+						<li>Only newly added containers are deployed = safe and fast deployment
+						</ul>
+					<li>Monitoring (via prometheus)
+						<ul>
+						<li>Every container has a dedicated exporter container
+						<li>Grafana dashboard
+						</ul>
+					<li>Health Check
+						<ul>
+						<pre><code>ansible-playbook -i inventory_redis_cluster.yml playbook_redis_check.yml --limit redis_cluster --user root --private-key=~/.ssh/id_rsa</code></pre>
+						<li>takes about 2 min to run
+						</ul>
+					<li>HA/failover for patching and reboots
+						<ul>
+						<li>The docker daemon takes care of restarting the containers via the </font><pre style="display: inline;">unless-stopped</pre><font size="6"> restart policy
+						</ul>
+					</ul>
+					</font>
+				</section>
+				<section>
+					<h4>What this creates<h4>
+					<img src="img/image1.png" height="600">
+				</section>
+				<section>
+					<h4>Grafana Dashboard</h4>
+					<font size="6"><em><a href="https://github.com/oliver006/redis_exporter">Redis prometheus exporter</a> metrics and <a href="https://grafana.com/dashboards/763">Grafana dashboard</a> are both provided by oliver006</em></font>
+					<img src="img/grafana-dashboard.png">
+				</section>
+				<section>
+					<h4>Live Demo</h4>
+					<ul>
+					<li>Provision 3 new VMs on Hetzner Cloud
+					<li>Update inventory with new IPs
+					<pre><code># ansible -i inventory_redis_cluster.yml all -m shell -a uptime --user root --private-key=~/.ssh/id_rsa
+
+# ansible-playbook -i inventory_redis_cluster.yml playbook_deploy_redis_containers.yml --limit redis_cluster --user root --private-key=~/.ssh/id_rsa -e "bootstrap_redis_cluster=true"</code></pre>
+					<li>This will deploy 7 Redis + Sentinel clusters and takes about 12 min to run
+					</ul>
+
+				</section>
+				<section>
+                                        <a href="https://www.youtube.com/watch?v=YuOBzWF0Aws">
+                                        <div text-align="center"><font size="3"><pre>
+                                                             ``.---:::///+++++++oooooossssssssssssssssssssssoooooo+++++++////:::---..``
+                                                        ./+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyso/-`
+                                                     ./syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+.
+                                                   `+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+`
+                                                  .syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo`
+                                                  oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+                                                 -yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy`
+                                                 +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/
+                                                 syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                .yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyysyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyys`
+                                                -yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:`:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.
+                                                :yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-
+                                                +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:      `-/syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:
+                                                +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:         `./oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:            `.:osyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                `:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                      ./yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:                `:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:            `.:osyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+                                                +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:         `./oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+                                                +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:      `-/syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/
+                                                :yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:   `-+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy-
+                                                -yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy:`:osyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.
+                                                .yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyysyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy`
+                                                 syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo
+                                                 +yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/
+                                                 -yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy.
+                                                  oyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy+
+                                                  `syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyo`
+                                                   `+yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy/`
+                                                     `/syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyys/`
+                                                        .:+syyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyys+:.
+                                                             ``.---:::///+++++++oooooossssssssssssssssssssssssooooo++++++++///:::---.``
+                                        </pre></font></div></a>
+				</section>
+                                <section>
+                                        <h4>This is great, but how could I possibly implement this myself?</h4>
+                                        <img src="img/github-qclug-ansible.png" style="border: 0; position: relative;">
+                                        <img src="img/forkme.png" width="120" style="border: 0; position: absolute; top: 23%; right: 2.5%;">
+                                </section>
+				<section>
+				fin
+				</section>
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+
+			// Push each slide change to the browser history
+			history: true,
+
+			// Transition style
+			transition: 'convex', // none/fade/slide/convex/concave/zoom
+
+                        // Parallax background image
+                        parallaxBackgroundImage: 'img/bg.jpg',
+
+	                // Parallax background size
+		        parallaxBackgroundSize: '1500px 800px',
+
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+				]
+			});
+		</script>
+	</body>
+</html>
